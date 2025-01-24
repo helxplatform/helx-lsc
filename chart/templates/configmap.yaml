@@ -1,0 +1,164 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lsc.fullname" . }}-config
+  labels:
+    {{- include "lsc.labels" . | nindent 4 }}
+data:
+  lsc.xml: |-
+    <?xml version="1.0" encoding="UTF-8"?>
+    <lsc
+      xmlns="http://lsc-project.org/XSD/lsc-core-2.1.xsd"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://lsc-project.org/XSD/lsc-core-2.1.xsd /usr/local/lsc/xsd/lsc-core-2.1.xsd"
+    >
+
+      <!-- Connections -->
+      <connections>
+        <ldapConnection id="{{ .Values.config.source.id }}">
+          <name>{{ .Values.config.source.id }}</name>
+          <url>{{ .Values.config.source.url }}</url>
+          <username>{{ .Values.config.source.user }}</username>
+          <password>{{ .Values.config.source.password }}</password>
+          <authentication>SIMPLE</authentication>
+        </ldapConnection>
+
+        <ldapConnection id="{{ .Values.config.destination.id }}">
+          <name>{{ .Values.config.destination.id }}</name>
+          <url>{{ .Values.config.destination.url }}</url>
+          <username>{{ .Values.config.destination.user }}</username>
+          <password>{{ .Values.config.destination.password }}</password>
+          <authentication>SIMPLE</authentication>
+        </ldapConnection>
+      </connections>
+
+      <!-- Tasks -->
+      <tasks>
+        {{- if .Values.config.tasks }}
+        {{- range $task := .Values.config.tasks }}
+        <task id="{{ $task.id }}">
+          <name>{{ $task.name }}</name>
+          <bean>{{ $task.bean | default "org.lsc.beans.SimpleBean" }}</bean>
+          {{- include "lsc.sourceService" (dict "task" $task "id" $.Values.config.source.id) | nindent 10 }}
+          {{- include "lsc.destinationService" (dict "task" $task "id" $.Values.config.destination.id) | nindent 10 }}
+          {{- include "lsc.propertiesBasedSyncOptions" $task | nindent 10 }}
+        </task>
+        {{- end }}
+        {{- else }}
+        <task id="null">
+          <name>null</name>
+          <bean>org.lsc.beans.SimpleBean</bean>
+
+          <ldapSourceService>
+            <name>nullSourceService</name>
+            <connection reference="{{ $.Values.config.source.id }}"/>
+            <baseDn>dc=example,dc=org</baseDn>
+            <getAllFilter>(objectClass=*)</getAllFilter>
+            <getOneFilter>(objectClass=nonExistentObjectClass)</getOneFilter>
+          </ldapSourceService>
+
+          <ldapDestinationService>
+            <name>nullDestinationService</name>
+            <connection reference="{{ $.Values.config.destination.id }}"/>
+            <baseDn>dc=example,dc=org</baseDn>
+            <getAllFilter>(objectClass=*)</getAllFilter>
+            <getOneFilter>(objectClass=nonExistentObjectClass)</getOneFilter>
+          </ldapDestinationService>
+
+          <!-- Synchronization Options -->
+          <propertiesBasedSyncOptions>
+            <mainIdentifier>cn</mainIdentifier>
+            <defaultDelimiter>,</defaultDelimiter>
+            <defaultPolicy>KEEP</defaultPolicy>
+          </propertiesBasedSyncOptions>
+        </task>
+        {{- end }}
+      </tasks>
+    </lsc>
+  logback.xml: |-
+    <?xml version="1.0" encoding="UTF-8"?>
+    <configuration>
+      <property name="logdir" value="/tmp/lsc/log" />
+
+      <!-- Set org.lsc logger level to the value from .Values.config.log_level -->
+      <logger name="org.lsc" level="{{ .Values.config.log_level }}">
+        <appender-ref ref="LSC"/>
+        <appender-ref ref="LSC_STATUS"/>
+      </logger>
+
+      <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+          <layout class="org.lsc.utils.output.LdifLayout">
+            <Pattern>%date{MMM dd HH:mm:ss} - %-5level - %message%n</Pattern>
+          </layout>
+        </encoder>
+      </appender>
+
+      <appender name="LSC" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${logdir}/lsc.log</file>
+        <layout class="org.lsc.utils.output.LdifLayout">
+          <Pattern>%date{MMM dd HH:mm:ss} - %-5level - %message%n</Pattern>
+        </layout>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+          <level>INFO</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+          <FileNamePattern>${logdir}/lsc.log.%i.gz</FileNamePattern>
+          <MinIndex>1</MinIndex>
+          <MaxIndex>7</MaxIndex>
+        </rollingPolicy>
+        <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+          <MaxFileSize>10000KB</MaxFileSize>
+        </triggeringPolicy>
+      </appender>
+
+      <appender name="LSC_STATUS" class="ch.qos.logback.core.FileAppender">
+        <append>false</append>
+        <file>${logdir}/lsc.status</file>
+        <layout class="org.lsc.utils.output.LdifLayout">
+          <Pattern>%date{MMM dd HH:mm:ss} - %-5level - %message%n</Pattern>
+        </layout>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+          <level>INFO</level>
+        </filter>
+      </appender>
+
+      <appender name="LDIF" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${logdir}/lsc.ldif</file>
+        <layout class="org.lsc.utils.output.LdifLayout">
+          <Pattern>%m%n</Pattern>
+          <onlyLdif>true</onlyLdif>
+        </layout>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+          <level>INFO</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+          <FileNamePattern>${logdir}/lsc.ldif.%i.gz</FileNamePattern>
+          <MinIndex>1</MinIndex>
+          <MaxIndex>7</MaxIndex>
+        </rollingPolicy>
+        <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+          <MaxFileSize>10000KB</MaxFileSize>
+        </triggeringPolicy>
+      </appender>
+
+      <logger name="lsc" level="INFO">
+        <appender-ref ref="LDIF"/>
+      </logger>
+
+      <logger name="communicationLogger" level="WARN">
+        <appender-ref ref="CONSOLE"/>
+      </logger>
+
+      <logger name="org.apache" level="WARN">
+        <appender-ref ref="CONSOLE"/>
+      </logger>
+
+      <logger name="poolLogger" level="WARN">
+        <appender-ref ref="CONSOLE"/>
+      </logger>
+
+      <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+      </root>
+    </configuration>
