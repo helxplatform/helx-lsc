@@ -131,7 +131,7 @@
     {{- if $dataset.force_values }}
     <forceValues>
       {{- range $value := $dataset.force_values }}
-      <string>{{ $value | replace "\n" "" | replace "\r" "" }}</string>
+      <string><![CDATA[{{ $value | replace "\n" "" | replace "\r" "" }}]]></string>
       {{- end }}
     </forceValues>
     {{- end }}
